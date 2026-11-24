@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1113">
+<title>データ直行カメラ</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<style>
+  :root {
+    --bg: #0f1113;
+    --panel: #1a1d21;
+    --line: #2c3036;
+    --text: #f3f4f6;
+    --muted: #9aa1ab;
+    --accent: #3b82f6;
+    --ok: #22c55e;
+    --ng: #ef4444;
+    --warn: #f59e0b;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font-family: "Noto Sans JP", system-ui, sans-serif; overscroll-behavior: none; }
+  button { font: inherit; color: inherit; cursor: pointer; }
+  #app { height: 100dvh; display: grid; grid-template-rows: auto 1fr auto;
+    padding-top: env(safe-area-inset-top); }
+
+  /* 上: 送り先 */
+  header { padding: 10px 12px 8px; background: var(--bg); }
+  .toprow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .toprow .label { font-size: 13px; color: var(--muted); }
+  #account { font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; }
+  #account.in { color: var(--ok); border-color: #1f4d2f; }
+  .dests { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .dest { border: 1px solid var(--line); background: var(--panel); border-radius: 10px;
+    padding: 10px 0; font-size: 15px; font-weight: 700; }
+  .dest[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
+
+  /* 中: ファインダー */
+  #finder { position: relative; overflow: hidden; background: #000; min-height: 0; }
+  #video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .25s; }
+  #flash.on { opacity: .7; transition: none; }
+  .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; text-align: center; padding: 24px; gap: 14px; background: rgba(15,17,19,.92); }
+  .overlay[hidden] { display: none; }
+  .overlay p { margin: 0; line-height: 1.7; }
+  .big { font-size: 17px; font-weight: 700; padding: 14px 22px; border-radius: 12px; border: 0;
+    background: var(--accent); min-width: 220px; }
+  .sub { font-size: 13px; color: var(--muted); }
+
+  /* 下: 送信の状態 + シャッター */
+  footer { background: var(--bg); padding: 8px 12px calc(14px + env(safe-area-inset-bottom)); }
+  #queue { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; min-height: 30px; }
+  #queue li { display: flex; align-items: center; gap: 8px; font-size: 13px; background: var(--panel);
+    border-radius: 8px; padding: 6px 10px; }
+  #queue .st { font-weight: 700; white-space: nowrap; }
+  #queue .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
+  #queue .sending .st { color: var(--warn); }
+  #queue .done .st { color: var(--ok); }
+  #queue .failed { background: #3a1517; }
+  #queue .failed .st, #queue .note .st { color: #fca5a5; }
+  #queue .note .nm { color: var(--text); white-space: normal; }
+  #queue .retry { border: 0; background: var(--ng); border-radius: 6px; padding: 6px 12px; font-weight: 700; font-size: 13px; }
+  #queue .msg { display: block; font-size: 12px; color: #fca5a5; white-space: normal; }
+  .shutterrow { display: flex; align-items: center; justify-content: center; position: relative; }
+  #shutter { width: 84px; height: 84px; border-radius: 50%; border: 5px solid #fff; background: #fff;
+    box-shadow: inset 0 0 0 4px var(--bg); }
+  #shutter:active { transform: scale(.94); }
+  #shutter:disabled { opacity: .35; }
+  #ver { position: absolute; right: 0; bottom: 0; font-size: 10px; color: #4b5260; }
+
+  /* 確認画面 */
+  #review { position: fixed; inset: 0; background: #000; display: grid; grid-template-rows: 1fr auto; z-index: 10; }
+  #review[hidden] { display: none; }
+  #review img { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+  #review .bar { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px;
+    padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); background: var(--bg); }
+  #review .bar .to { grid-column: 1 / -1; text-align: center; font-size: 14px; color: var(--muted); }
+  #review .bar .to b { color: var(--text); }
+  #retake, #send { border: 0; border-radius: 14px; padding: 18px 0; font-size: 18px; font-weight: 700; }
+  #retake { background: var(--panel); border: 1px solid var(--line); }
+  #send { background: var(--accent); }
+  #busy { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,.5); font-size: 16px; }
+  #busy[hidden] { display: none; }
+</style>
+</head>
+<body>
+<div id="app">
+  <header>
+    <div class="toprow">
+      <span class="label">送り先</span>
+      <button id="account" type="button">ログイン</button>
+    </div>
+    <div class="dests" id="dests"></div>
+  </header>
+
+  <div id="finder">
+    <video id="video" playsinline muted autoplay></video>
+    <div id="flash"></div>
+    <div class="overlay" id="camMsg" hidden></div>
+    <div class="overlay" id="loginCard" hidden>
+      <p><b>はじめに Google でログインしてください</b></p>
+      <p class="sub">撮った写真を、あなたの Google ドライブの<br>「データ直行カメラ」フォルダへ送ります。</p>
+      <button class="big" id="loginBtn" type="button">Google でログイン</button>
+      <p class="sub" id="loginNote"></p>
+    </div>
+  </div>
+
+  <footer>
+    <ul id="queue" aria-live="polite"></ul>
+    <div class="shutterrow">
+      <button id="shutter" type="button" aria-label="撮る" disabled></button>
+      <span id="ver"></span>
+    </div>
+  </footer>
+</div>
+
+<div id="review" hidden>
+  <img id="shot" alt="撮った写真">
+  <div class="bar">
+    <div class="to">送り先: <b id="reviewDest"></b></div>
+    <button id="retake" type="button">撮り直し</button>
+    <button id="send" type="button">送る</button>
+  </div>
+</div>
+<div id="busy" hidden>処理中…</div>
+
+<script>
+'use strict';
+
+/* ============ 設定 ============ */
+const CONFIG = {
+  VERSION: '0.1.0',
+  CLIENT_ID: '__CLIENT_ID__',  // Google Cloud の OAuth クライアントID（秘密の値ではない）
+  SCOPE: 'https://www.googleapis.com/auth/drive.file',
+  ROOT_NAME: 'データ直行カメラ',
+  DESTS: ['未整理', '自治会', '光熱費', 'ノート'],
+  DEFAULT_DEST: '未整理',
+  MAX_BYTES: 4.8 * 1024 * 1024,   // Drive の multipart アップロードの上限 5MB に収める
+  QUALITIES: [0.92, 0.86, 0.8, 0.72],
+};
+const KEY = { token: 'dcc.token', dest: 'dcc.dest', folders: 'dcc.folders', email: 'dcc.email' };
+const FOLDER_MIME = 'application/vnd.google-apps.folder';
+
+/* ============ 小道具 ============ */
+const $ = (id) => document.getElementById(id);
+const store = {
+  get(k) { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : null; } catch { return null; } },
+  set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
+  del(k) { try { localStorage.removeItem(k); } catch {} },
+};
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+function withTimeout(p, ms) {
+  return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
+}
+// 日本時間で YYYY-MM-DD_HHMMSS.jpg
+function fileNameFor(date) {
+  const j = new Date(date.getTime() + 9 * 3600 * 1000);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${j.getUTCFullYear()}-${p(j.getUTCMonth() + 1)}-${p(j.getUTCDate())}_` +
+         `${p(j.getUTCHours())}${p(j.getUTCMinutes())}${p(j.getUTCSeconds())}.jpg`;
+}
+class AuthError extends Error {}
+class ApiError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
+
+/* ============ 送り先 ============ */
+let dest = CONFIG.DESTS.includes(store.get(KEY.dest)) ? store.get(KEY.dest) : CONFIG.DEFAULT_DEST;
+function renderDests() {
+  const box = $('dests');
+  box.innerHTML = '';
+  for (const d of CONFIG.DESTS) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'dest'; b.textContent = d;
+    b.setAttribute('aria-pressed', String(d === dest));
+    b.onclick = () => { dest = d; store.set(KEY.dest, d); renderDests(); };
+    box.appendChild(b);
+  }
+}
+
+/* ============ ログイン（Google Identity Services のトークン方式） ============ */
+let token = store.get(KEY.token);      // { access_token, expires_at }
+let tokenClient = null;
+let waiters = [];
+const tokenValid = () => !!(token && token.access_token && token.expires_at - 60 * 1000 > Date.now());
+
+function initGis() {
+  if (tokenClient) return true;
+  if (!(window.google && google.accounts && google.accounts.oauth2)) return false;
+  if (CONFIG.CLIENT_ID.startsWith('__')) return false;
+  tokenClient = google.accounts.oauth2.initTokenClient({
+    client_id: CONFIG.CLIENT_ID,
+    scope: CONFIG.SCOPE,
+    callback: onTokenResponse,
+    error_callback: (err) => {
+      const msg = err && err.type === 'popup_failed_to_open'
+        ? 'ログインの窓が開けませんでした。もう一度押してください'
+        : 'ログインが終わりませんでした。もう一度押してください';
+      flushWaiters(new AuthError(msg));
+    },
+  });
+  return true;
+}
+function onTokenResponse(resp) {
+  if (!resp || resp.error) { flushWaiters(new AuthError('ログインできませんでした（' + (resp && resp.error) + '）')); return; }
+  if (!google.accounts.oauth2.hasGrantedAllScopes(resp, CONFIG.SCOPE)) {
+    flushWaiters(new AuthError('ドライブへの保存を許可してください（チェックを入れて続行）')); return;
+  }
+  token = { access_token: resp.access_token, expires_at: Date.now() + (Number(resp.expires_in) || 3600) * 1000 };
+  store.set(KEY.token, token);
+  flushWaiters(null);
+  afterLogin();
+}
+function flushWaiters(err) {
+  const ws = waiters; waiters = [];
+  for (const w of ws) err ? w.rej(err) : w.res(token.access_token);
+}
+// ★ボタンを押した処理の中で（await の前に）呼ぶこと。ログイン窓は押した操作からしか開けない
+function getTokenInGesture() {
+  if (tokenValid()) return Promise.resolve(token.access_token);
+  if (!initGis()) return Promise.reject(new AuthError(CONFIG.CLIENT_ID.startsWith('__')
+    ? 'まだ設定中です（クライアントIDが未設定）' : 'ログインの準備中です。少し待ってもう一度押してください'));
+  return new Promise((res, rej) => {
+    waiters.push({ res, rej });
+    if (waiters.length === 1) {
+      const opt = { prompt: '' };
+      const email = store.get(KEY.email);
+      if (email) opt.login_hint = email;
+      tokenClient.requestAccessToken(opt);
+    }
+  });
+}
+function clearToken() { token = null; store.del(KEY.token); renderAccount(); }
+
+function renderAccount() {
+  const a = $('account');
+  if (tokenValid()) { a.textContent = '● ログイン中'; a.classList.add('in'); }
+  else { a.textContent = store.get(KEY.email) ? 'ログイン（切れています）' : 'ログイン'; a.classList.remove('in'); }
+  $('loginCard').hidden = !!store.get(KEY.email) || tokenValid();
+}
+function loginClicked() {
+  $('loginNote').textContent = '';
+  getTokenInGesture().catch((e) => { $('loginNote').textContent = e.message; });
+}
+let setupPromise = null;
+function afterLogin() {
+  renderAccount();
+  // メールアドレスは次回のログインを1タップにするためだけに使う
+  if (!store.get(KEY.email)) {
+    api('/drive/v3/about?fields=user(emailAddress)')
+      .then((r) => { if (r && r.user && r.user.emailAddress) { store.set(KEY.email, r.user.emailAddress); renderAccount(); } })
+      .catch(() => {});
+  }
+  // フォルダを確かめる（無ければ作る）
+  ensureFolders(true).catch((e) => showNote('フォルダの準備に失敗: ' + e.message));
+}
+
+/* ============ Drive API ============ */
+async function api(path, opts = {}) {
+  if (!tokenValid()) throw new AuthError('ログインが切れました');
+  const r = await fetch('https://www.googleapis.com' + path, {
+    ...opts, headers: { Authorization: 'Bearer ' + token.access_token, ...(opts.headers || {}) },
+  });
+  if (r.status === 401) { clearToken(); throw new AuthError('ログインが切れました'); }
+  if (!r.ok) {
+    let msg = r.status + '';
+    try { const j = await r.json(); msg += ' ' + ((j.error && j.error.message) || ''); } catch {}
+    throw new ApiError(r.status, msg);
+  }
+  return r.status === 204 ? null : r.json();
+}
+const q = (s) => s.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+async function findFolder(name, parentId) {
+  const query = `name='${q(name)}' and mimeType='${FOLDER_MIME}' and trashed=false and '${parentId}' in parents`;
+  const r = await api('/drive/v3/files?spaces=drive&pageSize=10&orderBy=createdTime&fields=files(id,name)&q=' + encodeURIComponent(query));
+  return r.files && r.files.length ? r.files[0].id : null;
+}
+async function createFolder(name, parentId) {
+  const r = await api('/drive/v3/files?fields=id', {
+    method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name, mimeType: FOLDER_MIME, parents: [parentId] }),
+  });
+  return r.id;
+}
+async function folderAlive(id) {
+  if (!id) return false;
+  try { const f = await api(`/drive/v3/files/${encodeURIComponent(id)}?fields=id,trashed`); return !f.trashed; }
+  catch (e) { if (e instanceof ApiError && e.status === 404) return false; throw e; }
+}
+// 保存した ID → 名前で探す → 作る、の順
+function ensureFolders(verify) {
+  const cached = store.get(KEY.folders);
+  if (!verify && cached && cached.root && CONFIG.DESTS.every((d) => cached.sub && cached.sub[d])) return Promise.resolve(cached);
+  if (setupPromise) return setupPromise;
+  setupPromise = (async () => {
+    let f = cached && cached.root ? cached : null;
+    if (!f || !(await folderAlive(f.root))) {
+      const root = (await findFolder(CONFIG.ROOT_NAME, 'root')) || (await createFolder(CONFIG.ROOT_NAME, 'root'));
+      f = { root, sub: {} };
+    }
+    f.sub = f.sub || {};
+    for (const d of CONFIG.DESTS) {
+      if (await folderAlive(f.sub[d])) continue;
+      f.sub[d] = (await findFolder(d, f.root)) || (await createFolder(d, f.root));
+    }
+    store.set(KEY.folders, f);
+    return f;
+  })().finally(() => { setupPromise = null; });
+  return setupPromise;
+}
+async function uploadJpeg(blob, name, folderId) {
+  const boundary = 'dcc' + Math.random().toString(36).slice(2);
+  const meta = { name, parents: [folderId], mimeType: 'image/jpeg' };
+  const body = new Blob([
+    `--${boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify(meta)}\r\n`,
+    `--${boundary}\r\nContent-Type: image/jpeg\r\n\r\n`, blob, `\r\n--${boundary}--`,
+  ]);
+  return api('/upload/drive/v3/files?uploadType=multipart&fields=id,name', {
+    method: 'POST', headers: { 'Content-Type': `multipart/related; boundary=${boundary}` }, body,
+  });
+}
+
+/* ============ 送信の列 ============ */
+const queue = [];   // { id, blob, name, dest, state: 'sending'|'done'|'failed', msg }
+let seq = 0;
+function renderQueue() {
+  const ul = $('queue');
+  ul.innerHTML = '';
+  // 失敗は全部、それ以外は新しい順に3件まで
+  const shown = queue.filter((it) => it.state === 'failed')
+    .concat(queue.filter((it) => it.state !== 'failed').slice(0, 3)).slice(0, 5);
+  for (const it of shown) {
+    const li = document.createElement('li');
+    li.className = it.state;
+    const st = document.createElement('span'); st.className = 'st';
+    st.textContent = { sending: '送信中…', done: '✓ 送れました', failed: '✕ 送れませんでした', note: '！' }[it.state];
+    const nm = document.createElement('span'); nm.className = 'nm';
+    nm.textContent = it.state === 'note' ? it.dest : `${it.dest} / ${it.name}`;
+    if (it.state === 'failed' && it.msg) {
+      const m = document.createElement('span'); m.className = 'msg'; m.textContent = it.msg; nm.appendChild(m);
+    }
+    li.append(st, nm);
+    if (it.state === 'failed') {
+      const b = document.createElement('button'); b.type = 'button'; b.className = 'retry'; b.textContent = '再送';
+      b.onclick = () => startSend(it);
+      li.appendChild(b);
+    }
+    ul.appendChild(li);
+  }
+}
+function showNote(text) {
+  const it = { id: ++seq, name: '', dest: text, state: 'note', msg: '' };
+  queue.unshift(it); renderQueue();
+  setTimeout(() => { const i = queue.indexOf(it); if (i >= 0) { queue.splice(i, 1); renderQueue(); } }, 8000);
+}
+// ★ボタンを押した処理から呼ぶ（ログインが切れていたら、ここでログイン窓を開く）
+function startSend(it) {
+  it.state = 'sending'; it.msg = ''; renderQueue();
+  getTokenInGesture()
+    .then(() => sendItem(it))
+    .catch((e) => fail(it, e));
+}
+async function sendItem(it) {
+  try {
+    let f = await ensureFolders(false);
+    try {
+      await uploadJpeg(it.blob, it.name, f.sub[it.dest]);
+    } catch (e) {
+      if (!(e instanceof ApiError && e.status === 404)) throw e;
+      f = await ensureFolders(true);   // フォルダが消されていたら作り直して1回だけやり直す
+      await uploadJpeg(it.blob, it.name, f.sub[it.dest]);
+    }
+    it.state = 'done'; it.blob = null;
+    renderQueue();
+  } catch (e) { fail(it, e); }
+}
+function fail(it, e) {
+  it.state = 'failed';
+  it.msg = e instanceof AuthError ? e.message + '。［再送］を押すとログインして送ります'
+    : (navigator.onLine === false ? '電波がありません。つながったら［再送］を押してください' : '理由: ' + (e && e.message || e));
+  renderQueue();
+}
+window.addEventListener('beforeunload', (ev) => {
+  if (queue.some((it) => it.blob && it.state !== 'done')) { ev.preventDefault(); ev.returnValue = ''; }
+});
+
+/* ============ カメラ ============ */
+let stream = null, track = null, imageCapture = null, photoSettings = null;
+function camMessage(html) { const m = $('camMsg'); if (html) { m.innerHTML = html; m.hidden = false; } else { m.hidden = true; } }
+function stopCamera() {
+  if (stream) stream.getTracks().forEach((t) => t.stop());
+  stream = track = imageCapture = null; photoSettings = null;
+  $('shutter').disabled = true;
+}
+async function startCamera() {
+  stopCamera();
+  if (!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia)) {
+    camMessage('<p>このブラウザではカメラを使えません。<br>Chrome で開いてください。</p>'); return;
+  }
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: false,
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 4032 }, height: { ideal: 3024 } },
+    });
+  } catch (e) {
+    const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
+    camMessage(denied
+      ? '<p><b>カメラが許可されていません</b></p><p class="sub">アドレス欄の左のマーク → 権限 → カメラ を「許可」にして、<br>ページを開き直してください。</p>'
+      : '<p><b>カメラを開けませんでした</b></p><p class="sub">' + (e && e.name || '') + '</p><button class="big" type="button" onclick="startCamera()">もう一度</button>');
+    return;
+  }
+  const v = $('video');
+  v.srcObject = stream;
+  try { await v.play(); } catch {}
+  track = stream.getVideoTracks()[0];
+  // ピントは合わせ続ける（使える機種だけ）
+  try {
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    if (caps.focusMode && caps.focusMode.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
+  } catch {}
+  if ('ImageCapture' in window) {
+    try {
+      imageCapture = new ImageCapture(track);
+      const pc = await withTimeout(imageCapture.getPhotoCapabilities(), 3000);
+      if (pc && pc.imageWidth && pc.imageWidth.max) photoSettings = { imageWidth: pc.imageWidth.max, imageHeight: pc.imageHeight.max };
+    } catch { photoSettings = null; }
+  }
+  camMessage('');
+  $('shutter').disabled = false;
+}
+
+function canvasToBlob(canvas, quality) {
+  return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('JPEG にできませんでした'))), 'image/jpeg', quality));
+}
+// 画像を JPEG にする。rotate=true なら時計回りに90度回す。5MB 以内に収める
+async function encodeJpeg(src, w, h, rotate) {
+  let scale = 1;
+  for (let round = 0; round < 3; round++) {
+    const sw = Math.round(w * scale), sh = Math.round(h * scale);
+    const c = document.createElement('canvas');
+    c.width = rotate ? sh : sw; c.height = rotate ? sw : sh;
+    const g = c.getContext('2d');
+    if (rotate) { g.translate(c.width, 0); g.rotate(Math.PI / 2); }
+    g.drawImage(src, 0, 0, sw, sh);
+    for (const qv of CONFIG.QUALITIES) {
+      const b = await canvasToBlob(c, qv);
+      if (b.size <= CONFIG.MAX_BYTES) return b;
+    }
+    scale *= 0.8;
+  }
+  throw new Error('写真が大きすぎます');
+}
+async function capture() {
+  const v = $('video');
+  const portrait = v.videoHeight > v.videoWidth;
+  let blob = null;
+  if (imageCapture) {
+    try { blob = await withTimeout(imageCapture.takePhoto(photoSettings || undefined), 10000); }
+    catch { try { blob = await withTimeout(imageCapture.takePhoto(), 10000); } catch { blob = null; } }
+  }
+  if (blob) {
+    const bmp = await createImageBitmap(blob);
+    const rotate = bmp.width !== bmp.height && (bmp.height > bmp.width) !== portrait;
+    if (!rotate && blob.type === 'image/jpeg' && blob.size <= CONFIG.MAX_BYTES) { bmp.close && bmp.close(); return blob; }
+    const out = await encodeJpeg(bmp, bmp.width, bmp.height, rotate);
+    bmp.close && bmp.close();
+    return out;
+  }
+  // ImageCapture が使えない機種: 映像の1コマを取り込む
+  if (!v.videoWidth) throw new Error('カメラの映像がまだ来ていません');
+  return encodeJpeg(v, v.videoWidth, v.videoHeight, false);
+}
+
+/* ============ 撮る → 確認 → 送る ============ */
+let current = null;   // { blob, url, name }
+async function onShutter() {
+  if (!track) return;
+  $('shutter').disabled = true;
+  const at = new Date();
+  $('flash').classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => $('flash').classList.remove('on')));
+  $('busy').hidden = false;
+  try {
+    const blob = await capture();
+    current = { blob, url: URL.createObjectURL(blob), name: fileNameFor(at) };
+    $('shot').src = current.url;
+    $('reviewDest').textContent = dest;
+    $('review').hidden = false;
+  } catch (e) {
+    showNote('撮影に失敗: ' + e.message);
+  } finally {
+    $('busy').hidden = true;
+    $('shutter').disabled = !track;
+  }
+}
+function closeReview() {
+  $('review').hidden = true;
+  if (current) URL.revokeObjectURL(current.url);
+  $('shot').removeAttribute('src');
+  current = null;
+  if (!stream && !document.hidden) startCamera();
+}
+function onRetake() { closeReview(); }
+function onSend() {
+  if (!current) return;
+  const it = { id: ++seq, blob: current.blob, name: current.name, dest, state: 'sending', msg: '' };
+  queue.unshift(it);
+  closeReview();          // すぐ次を撮れる状態に戻す
+  startSend(it);          // 送信は裏で続ける
+}
+
+/* ============ 起動 ============ */
+function boot() {
+  $('ver').textContent = 'v' + CONFIG.VERSION;
+  renderDests();
+  renderAccount();
+  $('account').onclick = loginClicked;
+  $('loginBtn').onclick = loginClicked;
+  $('shutter').onclick = onShutter;
+  $('retake').onclick = onRetake;
+  $('send').onclick = onSend;
+  if (CONFIG.CLIENT_ID.startsWith('__')) $('loginNote').textContent = 'まだ設定中です（クライアントIDが未設定）';
+  // GIS の読み込みを待って準備しておく（押したときにすぐ窓を開けるように）
+  (async () => { for (let i = 0; i < 100 && !initGis(); i++) await sleep(100); })();
+  if (tokenValid()) afterLogin();
+  setInterval(renderAccount, 30 * 1000);
+  startCamera();
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopCamera();
+    else if ($('review').hidden) startCamera();
+  });
+}
+boot();
+</script>
+</body>
+</html>
