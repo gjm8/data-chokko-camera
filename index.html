@@ -35,10 +35,28 @@
   #account { font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--line);
     border-radius: 999px; padding: 4px 10px; }
   #account.in { color: var(--ok); border-color: #1f4d2f; }
-  .dests { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+  .dests { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; max-height: 118px; overflow-y: auto; }
   .dest { border: 1px solid var(--line); background: var(--panel); border-radius: 10px;
-    padding: 10px 0; font-size: 15px; font-weight: 700; }
+    padding: 10px 4px; font-size: 15px; font-weight: 700; min-width: 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dest[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); }
+  .dest.add { border-style: dashed; color: var(--muted); font-weight: 400; font-size: 14px; }
+
+  /* 新しいフォルダの窓 */
+  #newFolder { position: fixed; inset: 0; z-index: 30; background: rgba(0,0,0,.6);
+    display: flex; align-items: flex-start; justify-content: center; padding: 18vh 16px 0; }
+  #newFolder[hidden] { display: none; }
+  #newFolder .card { width: 100%; max-width: 420px; background: var(--panel); border: 1px solid var(--line);
+    border-radius: 14px; padding: 18px 16px 14px; }
+  #newFolder p { margin: 0 0 6px; }
+  #nfName { width: 100%; font: inherit; font-size: 17px; color: var(--text); background: var(--bg);
+    border: 1px solid var(--line); border-radius: 10px; padding: 12px; margin: 8px 0 4px; }
+  #nfErr { min-height: 1.4em; font-size: 13px; color: #fca5a5; }
+  #newFolder .row { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; margin-top: 6px; }
+  #nfCancel, #nfOk { border: 0; border-radius: 12px; padding: 14px 0; font-size: 16px; font-weight: 700; }
+  #nfCancel { background: var(--bg); border: 1px solid var(--line); }
+  #nfOk { background: var(--accent); }
+  #nfOk:disabled { opacity: .5; }
 
   /* 中: ファインダー */
   #finder { position: relative; overflow: hidden; background: #000; min-height: 0; }
@@ -130,13 +148,25 @@
   </div>
 </div>
 <div id="busy" hidden>処理中…</div>
+<div id="newFolder" hidden>
+  <div class="card">
+    <p><b>新しいフォルダ</b></p>
+    <p class="sub">「データ直行カメラ」の中に作って、送り先にします。</p>
+    <input id="nfName" type="text" maxlength="30" placeholder="例: 町内会" autocomplete="off" enterkeyhint="done">
+    <p id="nfErr"></p>
+    <div class="row">
+      <button id="nfCancel" type="button">やめる</button>
+      <button id="nfOk" type="button">作る</button>
+    </div>
+  </div>
+</div>
 
 <script>
 'use strict';
 
 /* ============ 設定 ============ */
 const CONFIG = {
-  VERSION: '0.1.1',
+  VERSION: '0.2.0',
   // Google Cloud（プロジェクト data-chokko-camera）の OAuth クライアントID。秘密の値ではない
   CLIENT_ID: '73917303414-3d4rbe7ifl904r77kv79lq1csa7smura.apps.googleusercontent.com',
   SCOPE: 'https://www.googleapis.com/auth/drive.file',
@@ -146,7 +176,7 @@ const CONFIG = {
   MAX_BYTES: 4.8 * 1024 * 1024,   // Drive の multipart アップロードの上限 5MB に収める
   QUALITIES: [0.92, 0.86, 0.8, 0.72],
 };
-const KEY = { token: 'dcc.token', dest: 'dcc.dest', folders: 'dcc.folders', email: 'dcc.email' };
+const KEY = { token: 'dcc.token', dest: 'dcc.dest', folders: 'dcc.folders', email: 'dcc.email', custom: 'dcc.custom' };
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 /* ============ 小道具 ============ */
@@ -171,17 +201,54 @@ class AuthError extends Error {}
 class ApiError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
 
 /* ============ 送り先 ============ */
-let dest = CONFIG.DESTS.includes(store.get(KEY.dest)) ? store.get(KEY.dest) : CONFIG.DEFAULT_DEST;
+// 自分で作ったフォルダ（決まった4つの後ろに並べる）。ログインのたびにドライブの一覧で読み直す
+let custom = (store.get(KEY.custom) || []).filter((n) => typeof n === 'string' && n && !CONFIG.DESTS.includes(n));
+const allDests = () => CONFIG.DESTS.concat(custom);
+let dest = allDests().includes(store.get(KEY.dest)) ? store.get(KEY.dest) : CONFIG.DEFAULT_DEST;
+function selectDest(d) { dest = d; store.set(KEY.dest, d); renderDests(); }
 function renderDests() {
   const box = $('dests');
   box.innerHTML = '';
-  for (const d of CONFIG.DESTS) {
+  for (const d of allDests()) {
     const b = document.createElement('button');
-    b.type = 'button'; b.className = 'dest'; b.textContent = d;
+    b.type = 'button'; b.className = 'dest'; b.textContent = d; b.title = d;
     b.setAttribute('aria-pressed', String(d === dest));
-    b.onclick = () => { dest = d; store.set(KEY.dest, d); renderDests(); };
+    b.onclick = () => selectDest(d);
     box.appendChild(b);
   }
+  const add = document.createElement('button');
+  add.type = 'button'; add.className = 'dest add'; add.textContent = '＋ 追加'; add.title = '新しいフォルダを作る';
+  add.onclick = openNewFolder;
+  box.appendChild(add);
+  const sel = box.querySelector('[aria-pressed="true"]');
+  if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
+}
+
+/* ============ 新しいフォルダ ============ */
+function openNewFolder() {
+  $('nfName').value = ''; $('nfErr').textContent = ''; $('nfOk').disabled = false;
+  $('newFolder').hidden = false;
+  setTimeout(() => $('nfName').focus(), 50);
+}
+function closeNewFolder() { $('newFolder').hidden = true; $('nfName').blur(); }
+function folderNameError(name) {
+  if (!name) return 'フォルダの名前を入れてください';
+  if (name.length > 30) return '30文字までにしてください';
+  if (/[\\/]/.test(name)) return '「/」は使えません';
+  return '';
+}
+// ★ボタンを押した処理の中で呼ぶ（ログインが切れていたら、ここでログイン窓を開く）
+function createFolderClicked() {
+  const name = $('nfName').value.trim().replace(/\s+/g, ' ');
+  const err = folderNameError(name);
+  if (err) { $('nfErr').textContent = err; return; }
+  if (allDests().includes(name)) { selectDest(name); closeNewFolder(); return; }   // 同じ名前があればそれを選ぶ
+  $('nfOk').disabled = true; $('nfErr').textContent = '作っています…';
+  getTokenInGesture()
+    .then(() => addFolder(name))
+    .then(() => { selectDest(name); closeNewFolder(); })
+    .catch((e) => { $('nfErr').textContent = 'フォルダを作れませんでした（' + (e && e.message || e) + '）'; })
+    .finally(() => { $('nfOk').disabled = false; });
 }
 
 /* ============ ログイン（Google Identity Services のトークン方式） ============ */
@@ -293,7 +360,12 @@ async function folderAlive(id) {
   try { const f = await api(`/drive/v3/files/${encodeURIComponent(id)}?fields=id,trashed`); return !f.trashed; }
   catch (e) { if (e instanceof ApiError && e.status === 404) return false; throw e; }
 }
-// 保存した ID → 名前で探す → 作る、の順
+async function listFolders(parentId) {
+  const query = `'${parentId}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`;
+  const r = await api('/drive/v3/files?spaces=drive&pageSize=200&orderBy=createdTime&fields=files(id,name)&q=' + encodeURIComponent(query));
+  return r.files || [];
+}
+// 親フォルダ: 保存した ID → 名前で探す → 作る。中のフォルダ: 一覧で読み直し、決まった4つが無ければ作る
 function ensureFolders(verify) {
   const cached = store.get(KEY.folders);
   if (!verify && cached && cached.root && CONFIG.DESTS.every((d) => cached.sub && cached.sub[d])) return Promise.resolve(cached);
@@ -304,15 +376,29 @@ function ensureFolders(verify) {
       const root = (await findFolder(CONFIG.ROOT_NAME, 'root')) || (await createFolder(CONFIG.ROOT_NAME, 'root'));
       f = { root, sub: {} };
     }
-    f.sub = f.sub || {};
-    for (const d of CONFIG.DESTS) {
-      if (await folderAlive(f.sub[d])) continue;
-      f.sub[d] = (await findFolder(d, f.root)) || (await createFolder(d, f.root));
-    }
+    const list = await listFolders(f.root);   // このアプリが作ったフォルダだけが見える（drive.file）
+    const sub = {};
+    for (const x of list) if (!sub[x.name]) sub[x.name] = x.id;
+    for (const d of CONFIG.DESTS) if (!sub[d]) sub[d] = await createFolder(d, f.root);
+    f.sub = sub;
+    custom = Object.keys(sub).filter((n) => !CONFIG.DESTS.includes(n));
+    store.set(KEY.custom, custom);
     store.set(KEY.folders, f);
+    if (!allDests().includes(dest)) selectDest(CONFIG.DEFAULT_DEST);   // ドライブで消された送り先は外す
+    else renderDests();
     return f;
   })().finally(() => { setupPromise = null; });
   return setupPromise;
+}
+// 名前のフォルダの ID を返す（無ければ「データ直行カメラ」の直下に作る）
+async function addFolder(name) {
+  const f = await ensureFolders(false);
+  if (!f.sub[name]) {
+    f.sub[name] = (await findFolder(name, f.root)) || (await createFolder(name, f.root));
+    store.set(KEY.folders, f);
+  }
+  if (!CONFIG.DESTS.includes(name) && !custom.includes(name)) { custom.push(name); store.set(KEY.custom, custom); }
+  return f.sub[name];
 }
 async function uploadJpeg(blob, name, folderId) {
   const boundary = 'dcc' + Math.random().toString(36).slice(2);
@@ -368,13 +454,12 @@ function startSend(it) {
 }
 async function sendItem(it) {
   try {
-    let f = await ensureFolders(false);
     try {
-      await uploadJpeg(it.blob, it.name, f.sub[it.dest]);
+      await uploadJpeg(it.blob, it.name, await addFolder(it.dest));
     } catch (e) {
       if (!(e instanceof ApiError && e.status === 404)) throw e;
-      f = await ensureFolders(true);   // フォルダが消されていたら作り直して1回だけやり直す
-      await uploadJpeg(it.blob, it.name, f.sub[it.dest]);
+      await ensureFolders(true);   // フォルダが消されていたら作り直して1回だけやり直す
+      await uploadJpeg(it.blob, it.name, await addFolder(it.dest));
     }
     it.state = 'done'; it.blob = null;
     renderQueue();
@@ -524,6 +609,11 @@ function boot() {
   $('shutter').onclick = onShutter;
   $('retake').onclick = onRetake;
   $('send').onclick = onSend;
+  $('nfOk').onclick = createFolderClicked;
+  $('nfCancel').onclick = closeNewFolder;
+  $('nfName').addEventListener('input', () => { $('nfErr').textContent = ''; });
+  $('nfName').addEventListener('keydown', (ev) => { if (ev.key === 'Enter') { ev.preventDefault(); createFolderClicked(); } });
+  $('newFolder').addEventListener('click', (ev) => { if (ev.target === $('newFolder')) closeNewFolder(); });
   if (CONFIG.CLIENT_ID.startsWith('__')) $('loginNote').textContent = 'まだ設定中です（クライアントIDが未設定）';
   // GIS の読み込みを待って準備しておく（押したときにすぐ窓を開けるように）
   (async () => { for (let i = 0; i < 100 && !initGis(); i++) await sleep(100); })();
