@@ -166,7 +166,7 @@
 
 /* ============ 設定 ============ */
 const CONFIG = {
-  VERSION: '0.2.0',
+  VERSION: '0.2.1',
   // Google Cloud（プロジェクト data-chokko-camera）の OAuth クライアントID。秘密の値ではない
   CLIENT_ID: '73917303414-3d4rbe7ifl904r77kv79lq1csa7smura.apps.googleusercontent.com',
   SCOPE: 'https://www.googleapis.com/auth/drive.file',
@@ -491,7 +491,8 @@ async function startCamera() {
   try {
     stream = await navigator.mediaDevices.getUserMedia({
       audio: false,
-      video: { facingMode: { ideal: 'environment' }, width: { ideal: 4032 }, height: { ideal: 3024 } },
+      // 画面に映す映像は軽い大きさにする（撮る写真は takePhoto で機種の最大の大きさのまま）
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1440 } },
     });
   } catch (e) {
     const denied = e && (e.name === 'NotAllowedError' || e.name === 'SecurityError');
@@ -541,6 +542,29 @@ async function encodeJpeg(src, w, h, rotate) {
   }
   throw new Error('写真が大きすぎます');
 }
+// JPEG の頭だけを読んで、大きさと向きの印（EXIF Orientation）を返す。写真を丸ごと読み込まない
+async function jpegInfo(blob) {
+  const b = new DataView(await blob.slice(0, 256 * 1024).arrayBuffer());
+  if (b.byteLength < 4 || b.getUint16(0) !== 0xFFD8) return null;
+  let p = 2, orientation = 1, w = 0, h = 0;
+  while (p + 4 <= b.byteLength) {
+    if (b.getUint8(p) !== 0xFF) return null;
+    const m = b.getUint8(p + 1), len = b.getUint16(p + 2);
+    if (m === 0xE1 && p + 10 <= b.byteLength && b.getUint32(p + 4) === 0x45786966) {   // "Exif"
+      const t = p + 10, le = b.getUint16(t) === 0x4949;
+      const g16 = (o) => b.getUint16(o, le), g32 = (o) => b.getUint32(o, le);
+      const ifd = t + g32(t + 4), n = g16(ifd);
+      for (let i = 0; i < n; i++) { const e = ifd + 2 + i * 12; if (g16(e) === 0x0112) orientation = g16(e + 8); }
+    } else if (m >= 0xC0 && m <= 0xCF && m !== 0xC4 && m !== 0xC8 && m !== 0xCC) {   // SOF
+      h = b.getUint16(p + 5); w = b.getUint16(p + 7);
+      break;
+    }
+    p += 2 + len;
+  }
+  if (!w || !h) return null;
+  const swap = orientation >= 5 && orientation <= 8;   // 90度回して表示する印
+  return { width: swap ? h : w, height: swap ? w : h };
+}
 async function capture() {
   const v = $('video');
   const portrait = v.videoHeight > v.videoWidth;
@@ -550,10 +574,13 @@ async function capture() {
     catch { try { blob = await withTimeout(imageCapture.takePhoto(), 10000); } catch { blob = null; } }
   }
   if (blob) {
+    let info = null;
+    try { if (blob.type === 'image/jpeg') info = await jpegInfo(blob); } catch { info = null; }
+    const rotateNeeded = (wd, ht) => wd !== ht && (ht > wd) !== portrait;
+    // ふつうはここで終わり（向きが合っていて 5MB 以内なら、撮ったままを送る）
+    if (info && !rotateNeeded(info.width, info.height) && blob.size <= CONFIG.MAX_BYTES) return blob;
     const bmp = await createImageBitmap(blob);
-    const rotate = bmp.width !== bmp.height && (bmp.height > bmp.width) !== portrait;
-    if (!rotate && blob.type === 'image/jpeg' && blob.size <= CONFIG.MAX_BYTES) { bmp.close && bmp.close(); return blob; }
-    const out = await encodeJpeg(bmp, bmp.width, bmp.height, rotate);
+    const out = await encodeJpeg(bmp, bmp.width, bmp.height, rotateNeeded(bmp.width, bmp.height));
     bmp.close && bmp.close();
     return out;
   }
@@ -576,6 +603,7 @@ async function onShutter() {
     $('shot').src = current.url;
     $('reviewDest').textContent = dest;
     $('review').hidden = false;
+    if (track) track.enabled = false;   // 確認画面のあいだは裏の映像を止める
   } catch (e) {
     showNote('撮影に失敗: ' + e.message);
   } finally {
@@ -588,6 +616,7 @@ function closeReview() {
   if (current) URL.revokeObjectURL(current.url);
   $('shot').removeAttribute('src');
   current = null;
+  if (track) track.enabled = true;
   if (!stream && !document.hidden) startCamera();
 }
 function onRetake() { closeReview(); }
