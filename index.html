@@ -85,21 +85,24 @@
   .sub { font-size: 13px; color: var(--muted); }
 
   /* 下: 送信の状態 + 撮った写真の列 + シャッター */
-  footer { background: var(--bg); padding: 8px 12px calc(14px + env(safe-area-inset-bottom)); }
-  #queue { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; min-height: 30px; }
-  #queue li { display: flex; align-items: center; gap: 8px; font-size: 13px; background: var(--panel);
-    border-radius: 8px; padding: 6px 10px; }
+  footer { background: var(--bg); padding: 10px 12px calc(14px + env(safe-area-inset-bottom)); }
+  /* 送信の行と撮った写真の列は映像の上に重ねる（出入りしても映像の枠の高さが変わらないように） */
+  #queue { position: absolute; top: 8px; left: 8px; right: 8px; z-index: 3; list-style: none; margin: 0; padding: 0;
+    display: flex; flex-direction: column; gap: 4px; pointer-events: none; }
+  #queue li { display: flex; align-items: center; gap: 8px; font-size: 13px; background: rgba(26,29,33,.9);
+    border-radius: 8px; padding: 6px 10px; pointer-events: auto; }
   #queue .st { font-weight: 700; white-space: nowrap; }
   #queue .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); }
   #queue .sending .st { color: var(--warn); }
   #queue .done .st { color: var(--ok); }
-  #queue .failed { background: #3a1517; }
+  #queue .failed { background: rgba(58,21,23,.95); }
   #queue .failed .st, #queue .note .st { color: #fca5a5; }
   #queue .note .nm { color: var(--text); white-space: normal; }
   #queue .retry { border: 0; background: var(--ng); border-radius: 6px; padding: 6px 12px; font-weight: 700; font-size: 13px; }
   #queue .msg { display: block; font-size: 12px; color: #fca5a5; white-space: normal; }
-  #strip { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 8px; padding-bottom: 2px; }
+  #strip { position: absolute; left: 8px; right: 8px; bottom: 8px; z-index: 2; display: flex; gap: 6px; overflow-x: auto; }
   #strip[hidden] { display: none; }
+  #strip:not([hidden]) ~ #hint { display: none; }
   #strip .th { position: relative; flex: 0 0 auto; height: 52px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
   #strip .th img { height: 100%; display: block; }
   #strip .th.blur { border-color: var(--warn); }
@@ -200,6 +203,8 @@
     <video id="video" playsinline muted autoplay></video>
     <div id="focusRing"></div>
     <div id="flash"></div>
+    <ul id="queue" aria-live="polite"></ul>
+    <div id="strip" hidden></div>
     <div id="hint">画面を押すとピントを合わせ直します</div>
     <div class="overlay" id="camMsg" hidden></div>
     <div class="overlay" id="loginCard" hidden>
@@ -211,8 +216,6 @@
   </div>
 
   <footer>
-    <ul id="queue" aria-live="polite"></ul>
-    <div id="strip" hidden></div>
     <div class="shutterrow">
       <button id="modeBtn" type="button"><b>1枚ずつ</b>連続にする</button>
       <button id="shutter" type="button" aria-label="撮る" disabled></button>
@@ -278,7 +281,7 @@
 
 /* ============ 設定 ============ */
 const CONFIG = {
-  VERSION: '0.4.0',
+  VERSION: '0.4.1',
   // Google Cloud（プロジェクト data-chokko-camera）の OAuth クライアントID。秘密の値ではない
   CLIENT_ID: '73917303414-3d4rbe7ifl904r77kv79lq1csa7smura.apps.googleusercontent.com',
   SCOPE: 'https://www.googleapis.com/auth/drive.file',
@@ -718,6 +721,7 @@ async function refocus(point) {
 // 映像を押したら、丸い印を出してピントを合わせ直す
 function onFinderTap(ev) {
   if (!track || !$('camMsg').hidden || !$('loginCard').hidden) return;
+  if (ev.target.closest && ev.target.closest('#queue, #strip')) return;   // 重ねた行・写真の列を押したときは合わせ直さない
   const r = $('finder').getBoundingClientRect();
   const x = ev.clientX - r.left, y = ev.clientY - r.top;
   const ring = $('focusRing');
