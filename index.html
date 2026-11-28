@@ -95,7 +95,9 @@
   /* 確認画面 */
   #review { position: fixed; inset: 0; background: #000; display: grid; grid-template-rows: 1fr auto; z-index: 10; }
   #review[hidden] { display: none; }
-  #review img { width: 100%; height: 100%; object-fit: contain; min-height: 0; }
+  #review .pic { position: relative; min-height: 0; }
+  #review .pic canvas, #review .pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #review .pic img[hidden] { display: none; }
   #review .bar { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px;
     padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); background: var(--bg); }
   #review .bar .to { grid-column: 1 / -1; text-align: center; font-size: 14px; color: var(--muted); }
@@ -140,7 +142,7 @@
 </div>
 
 <div id="review" hidden>
-  <img id="shot" alt="撮った写真">
+  <div class="pic"><canvas id="quick"></canvas><img id="shot" alt="撮った写真" hidden></div>
   <div class="bar">
     <div class="to">送り先: <b id="reviewDest"></b></div>
     <button id="retake" type="button">撮り直し</button>
@@ -166,7 +168,7 @@
 
 /* ============ 設定 ============ */
 const CONFIG = {
-  VERSION: '0.2.1',
+  VERSION: '0.2.2',
   // Google Cloud（プロジェクト data-chokko-camera）の OAuth クライアントID。秘密の値ではない
   CLIENT_ID: '73917303414-3d4rbe7ifl904r77kv79lq1csa7smura.apps.googleusercontent.com',
   SCOPE: 'https://www.googleapis.com/auth/drive.file',
@@ -454,6 +456,7 @@ function startSend(it) {
 }
 async function sendItem(it) {
   try {
+    if (!it.blob) it.blob = await it.blobP;   // 撮影がまだなら、できあがるのを待つ
     try {
       await uploadJpeg(it.blob, it.name, await addFolder(it.dest));
     } catch (e) {
@@ -461,7 +464,7 @@ async function sendItem(it) {
       await ensureFolders(true);   // フォルダが消されていたら作り直して1回だけやり直す
       await uploadJpeg(it.blob, it.name, await addFolder(it.dest));
     }
-    it.state = 'done'; it.blob = null;
+    it.state = 'done'; it.blob = null; it.blobP = null;
     renderQueue();
   } catch (e) { fail(it, e); }
 }
@@ -472,7 +475,7 @@ function fail(it, e) {
   renderQueue();
 }
 window.addEventListener('beforeunload', (ev) => {
-  if (queue.some((it) => it.blob && it.state !== 'done')) { ev.preventDefault(); ev.returnValue = ''; }
+  if (queue.some((it) => (it.blob || it.blobP) && it.state !== 'done')) { ev.preventDefault(); ev.returnValue = ''; }
 });
 
 /* ============ カメラ ============ */
@@ -590,31 +593,38 @@ async function capture() {
 }
 
 /* ============ 撮る → 確認 → 送る ============ */
-let current = null;   // { blob, url, name }
-async function onShutter() {
-  if (!track) return;
-  $('shutter').disabled = true;
+let current = null;    // { name, blobP（撮影中の約束）, blob, url }
+let capturing = false; // きれいな写真を撮っている最中（約1秒）
+// 押した瞬間の画面の絵をすぐ確認画面に出し、きれいな写真（機種の最大の大きさ）は裏で撮る
+function onShutter() {
+  if (!track || capturing) return;
   const at = new Date();
+  const v = $('video'), c = $('quick');
+  if (v.videoWidth) { c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0); }
   $('flash').classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => $('flash').classList.remove('on')));
-  $('busy').hidden = false;
-  try {
-    const blob = await capture();
-    current = { blob, url: URL.createObjectURL(blob), name: fileNameFor(at) };
-    $('shot').src = current.url;
-    $('reviewDest').textContent = dest;
-    $('review').hidden = false;
-    if (track) track.enabled = false;   // 確認画面のあいだは裏の映像を止める
-  } catch (e) {
-    showNote('撮影に失敗: ' + e.message);
-  } finally {
-    $('busy').hidden = true;
-    $('shutter').disabled = !track;
-  }
+  capturing = true; $('shutter').disabled = true;
+  const cur = { name: fileNameFor(at), blob: null, url: null };
+  cur.blobP = capture().then((blob) => {
+    cur.blob = blob;
+    if (current === cur) {   // まだ確認画面なら、きれいな写真に差し替える
+      cur.url = URL.createObjectURL(blob);
+      const img = $('shot');
+      img.onload = () => { if (current === cur) img.hidden = false; };
+      img.src = cur.url;
+      if (track) track.enabled = false;   // 確認画面のあいだは裏の映像を止める
+    }
+    return blob;
+  }).finally(() => { capturing = false; $('shutter').disabled = !track; });
+  cur.blobP.catch((e) => { if (current === cur) closeReview(); showNote('撮影に失敗: ' + e.message); });
+  current = cur;
+  $('shot').hidden = true; $('shot').removeAttribute('src');
+  $('reviewDest').textContent = dest;
+  $('review').hidden = false;
 }
 function closeReview() {
   $('review').hidden = true;
-  if (current) URL.revokeObjectURL(current.url);
-  $('shot').removeAttribute('src');
+  if (current && current.url) URL.revokeObjectURL(current.url);
+  $('shot').removeAttribute('src'); $('shot').hidden = true;
   current = null;
   if (track) track.enabled = true;
   if (!stream && !document.hidden) startCamera();
@@ -622,10 +632,11 @@ function closeReview() {
 function onRetake() { closeReview(); }
 function onSend() {
   if (!current) return;
-  const it = { id: ++seq, blob: current.blob, name: current.name, dest, state: 'sending', msg: '' };
+  const cur = current;
+  const it = { id: ++seq, blob: cur.blob, blobP: cur.blobP, name: cur.name, dest, state: 'sending', msg: '' };
   queue.unshift(it);
   closeReview();          // すぐ次を撮れる状態に戻す
-  startSend(it);          // 送信は裏で続ける
+  startSend(it);          // 写真ができしだい、裏で送る
 }
 
 /* ============ 起動 ============ */
