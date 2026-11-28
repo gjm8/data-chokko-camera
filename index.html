@@ -30,9 +30,11 @@
 
   /* 上: 送り先 */
   header { padding: 10px 12px 8px; background: var(--bg); }
-  .toprow { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .toprow { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
   .toprow .label { font-size: 13px; color: var(--muted); }
-  #account { font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--line);
+  #openFolder { font-size: 12px; color: var(--text); background: var(--panel); border: 1px solid var(--line);
+    border-radius: 999px; padding: 4px 10px; }
+  #account { margin-left: auto; font-size: 12px; color: var(--muted); background: none; border: 1px solid var(--line);
     border-radius: 999px; padding: 4px 10px; }
   #account.in { color: var(--ok); border-color: #1f4d2f; }
   .dests { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; max-height: 118px; overflow-y: auto; }
@@ -59,10 +61,21 @@
   #nfOk:disabled { opacity: .5; }
 
   /* 中: ファインダー */
-  #finder { position: relative; overflow: hidden; background: #000; min-height: 0; }
+  #finder { position: relative; overflow: hidden; background: #000; min-height: 0; touch-action: manipulation; }
   #video { width: 100%; height: 100%; object-fit: contain; display: block; }
   #flash { position: absolute; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .25s; }
   #flash.on { opacity: .7; transition: none; }
+  #focusRing { position: absolute; width: 76px; height: 76px; margin: -38px 0 0 -38px; border: 2px solid #fff;
+    border-radius: 50%; pointer-events: none; opacity: 0; }
+  #focusRing.on { animation: focus 1.4s ease-out forwards; }
+  @keyframes focus {
+    0% { opacity: 1; transform: scale(1.5); border-color: #fff; }
+    35% { opacity: 1; transform: scale(1); border-color: #fff; }
+    70% { opacity: 1; transform: scale(1); border-color: var(--ok); }
+    100% { opacity: 0; transform: scale(1); border-color: var(--ok); }
+  }
+  #hint { position: absolute; left: 0; right: 0; bottom: 8px; text-align: center; font-size: 12px;
+    color: rgba(255,255,255,.75); pointer-events: none; text-shadow: 0 1px 2px #000; }
   .overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center;
     justify-content: center; text-align: center; padding: 24px; gap: 14px; background: rgba(15,17,19,.92); }
   .overlay[hidden] { display: none; }
@@ -71,7 +84,7 @@
     background: var(--accent); min-width: 220px; }
   .sub { font-size: 13px; color: var(--muted); }
 
-  /* 下: 送信の状態 + シャッター */
+  /* 下: 送信の状態 + 撮った写真の列 + シャッター */
   footer { background: var(--bg); padding: 8px 12px calc(14px + env(safe-area-inset-bottom)); }
   #queue { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; min-height: 30px; }
   #queue li { display: flex; align-items: center; gap: 8px; font-size: 13px; background: var(--panel);
@@ -85,29 +98,72 @@
   #queue .note .nm { color: var(--text); white-space: normal; }
   #queue .retry { border: 0; background: var(--ng); border-radius: 6px; padding: 6px 12px; font-weight: 700; font-size: 13px; }
   #queue .msg { display: block; font-size: 12px; color: #fca5a5; white-space: normal; }
-  .shutterrow { display: flex; align-items: center; justify-content: center; position: relative; }
+  #strip { display: flex; gap: 6px; overflow-x: auto; margin: 0 0 8px; padding-bottom: 2px; }
+  #strip[hidden] { display: none; }
+  #strip .th { position: relative; flex: 0 0 auto; height: 52px; border-radius: 6px; overflow: hidden; border: 1px solid var(--line); }
+  #strip .th img { height: 100%; display: block; }
+  #strip .th.blur { border-color: var(--warn); }
+  .shutterrow { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; position: relative; }
+  #modeBtn { justify-self: start; border: 1px solid var(--line); background: var(--panel); border-radius: 12px;
+    padding: 8px 12px; font-size: 13px; line-height: 1.3; text-align: center; min-width: 76px; }
+  #modeBtn b { display: block; font-size: 15px; }
+  #modeBtn.burst { background: var(--warn); border-color: var(--warn); color: #111; }
   #shutter { width: 84px; height: 84px; border-radius: 50%; border: 5px solid #fff; background: #fff;
     box-shadow: inset 0 0 0 4px var(--bg); }
   #shutter:active { transform: scale(.94); }
   #shutter:disabled { opacity: .35; }
-  #ver { position: absolute; right: 0; bottom: 0; font-size: 10px; color: #4b5260; }
+  #batchBtn { justify-self: end; border: 0; background: var(--accent); border-radius: 12px; padding: 8px 12px;
+    font-size: 13px; line-height: 1.3; font-weight: 700; min-width: 76px; }
+  #batchBtn b { display: block; font-size: 18px; }
+  #batchBtn[hidden] { display: none; }
+  #ver { position: absolute; right: 0; bottom: -12px; font-size: 10px; color: #4b5260; }
 
-  /* 確認画面 */
-  #review { position: fixed; inset: 0; background: #000; display: grid; grid-template-rows: 1fr auto; z-index: 10; }
+  /* 確認画面（1枚ずつ） */
+  #review { position: fixed; inset: 0; background: #000; z-index: 10; }
   #review[hidden] { display: none; }
-  #review .pic { position: relative; min-height: 0; }
+  #review .pic { position: absolute; left: 0; right: 0; }
   #review .pic canvas, #review .pic img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   #review .pic img[hidden] { display: none; }
-  #review .bar { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px;
+  .blurWarn { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); background: var(--warn); color: #111;
+    font-size: 14px; font-weight: 700; padding: 8px 14px; border-radius: 999px; white-space: nowrap; z-index: 1; }
+  .blurWarn[hidden] { display: none; }
+  #review .bar { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px;
     padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); background: var(--bg); }
   #review .bar .to { grid-column: 1 / -1; text-align: center; font-size: 14px; color: var(--muted); }
   #review .bar .to b { color: var(--text); }
   #retake, #send { border: 0; border-radius: 14px; padding: 18px 0; font-size: 18px; font-weight: 700; }
   #retake { background: var(--panel); border: 1px solid var(--line); }
   #send { background: var(--accent); }
-  #busy { position: fixed; inset: 0; z-index: 20; display: flex; align-items: center; justify-content: center;
-    background: rgba(0,0,0,.5); font-size: 16px; }
-  #busy[hidden] { display: none; }
+
+  /* まとめて確認（連続モード） */
+  #batch { position: fixed; inset: 0; z-index: 12; background: var(--bg); display: grid; grid-template-rows: auto 1fr auto; }
+  #batch[hidden] { display: none; }
+  #batch .head { padding: calc(12px + env(safe-area-inset-top)) 14px 8px; font-size: 15px; }
+  #batch .head .sub { display: block; margin-top: 2px; }
+  #grid { overflow-y: auto; padding: 4px 12px 12px; display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; align-content: start; }
+  #grid .cell { position: relative; background: #000; border-radius: 10px; overflow: hidden; aspect-ratio: 3 / 4; border: 2px solid transparent; }
+  #grid .cell.blur { border-color: var(--warn); }
+  #grid .cell img { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #grid .cell .no { position: absolute; left: 6px; top: 6px; background: rgba(0,0,0,.6); font-size: 12px; padding: 2px 8px; border-radius: 999px; }
+  #grid .cell .del { position: absolute; right: 6px; top: 6px; width: 36px; height: 36px; border-radius: 50%; border: 0;
+    background: rgba(0,0,0,.7); font-size: 18px; font-weight: 700; }
+  #grid .cell .bw { position: absolute; left: 6px; bottom: 6px; background: var(--warn); color: #111; font-size: 12px; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px; }
+  #batch .bar { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; padding: 10px 12px calc(16px + env(safe-area-inset-bottom)); }
+  #batch .bar .to { grid-column: 1 / -1; text-align: center; font-size: 14px; color: var(--muted); }
+  #batch .bar .to b { color: var(--text); }
+  #batchBack, #batchSend { border: 0; border-radius: 14px; padding: 16px 0; font-size: 17px; font-weight: 700; }
+  #batchBack { background: var(--panel); border: 1px solid var(--line); }
+  #batchSend { background: var(--accent); }
+  #batchSend:disabled { opacity: .4; }
+  #viewer { position: fixed; inset: 0; z-index: 14; background: #000; }
+  #viewer[hidden] { display: none; }
+  #viewer img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  #viewer .bar { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+    padding: 12px 12px calc(16px + env(safe-area-inset-bottom)); background: rgba(15,17,19,.85); }
+  #viewDel, #viewClose { border: 0; border-radius: 14px; padding: 16px 0; font-size: 17px; font-weight: 700; }
+  #viewDel { background: #3a1517; color: #fca5a5; }
+  #viewClose { background: var(--panel); border: 1px solid var(--line); }
 </style>
 </head>
 <body>
@@ -115,6 +171,7 @@
   <header>
     <div class="toprow">
       <span class="label">送り先</span>
+      <button id="openFolder" type="button" title="選んでいる送り先のフォルダを Google ドライブで開く">ドライブで見る</button>
       <button id="account" type="button">ログイン</button>
     </div>
     <div class="dests" id="dests"></div>
@@ -122,7 +179,9 @@
 
   <div id="finder">
     <video id="video" playsinline muted autoplay></video>
+    <div id="focusRing"></div>
     <div id="flash"></div>
+    <div id="hint">画面を押すとピントを合わせ直します</div>
     <div class="overlay" id="camMsg" hidden></div>
     <div class="overlay" id="loginCard" hidden>
       <p><b>はじめに Google でログインしてください</b></p>
@@ -134,22 +193,43 @@
 
   <footer>
     <ul id="queue" aria-live="polite"></ul>
+    <div id="strip" hidden></div>
     <div class="shutterrow">
+      <button id="modeBtn" type="button"><b>1枚ずつ</b>連続にする</button>
       <button id="shutter" type="button" aria-label="撮る" disabled></button>
+      <button id="batchBtn" type="button" hidden><b id="batchCount">0</b>確認する</button>
       <span id="ver"></span>
     </div>
   </footer>
 </div>
 
 <div id="review" hidden>
-  <div class="pic"><canvas id="quick"></canvas><img id="shot" alt="撮った写真" hidden></div>
+  <div class="pic"><canvas id="quick"></canvas><img id="shot" alt="撮った写真" hidden><div class="blurWarn" id="reviewBlur" hidden>ピンぼけかも。撮り直しをおすすめします</div></div>
   <div class="bar">
     <div class="to">送り先: <b id="reviewDest"></b></div>
     <button id="retake" type="button">撮り直し</button>
     <button id="send" type="button">送る</button>
   </div>
 </div>
-<div id="busy" hidden>処理中…</div>
+
+<div id="batch" hidden>
+  <div class="head"><b id="batchTitle"></b><span class="sub">写真を押すと大きく見られます。要らない写真は ✕ で消せます。</span></div>
+  <div id="grid"></div>
+  <div class="bar">
+    <div class="to">送り先: <b id="batchDest"></b></div>
+    <button id="batchBack" type="button">続けて撮る</button>
+    <button id="batchSend" type="button">まとめて送る</button>
+  </div>
+</div>
+<div id="viewer" hidden>
+  <img id="viewImg" alt="撮った写真">
+  <div class="blurWarn" id="viewBlur" hidden>ピンぼけかも</div>
+  <div class="bar">
+    <button id="viewDel" type="button">この写真を消す</button>
+    <button id="viewClose" type="button">閉じる</button>
+  </div>
+</div>
+
 <div id="newFolder" hidden>
   <div class="card">
     <p><b>新しいフォルダ</b></p>
@@ -168,7 +248,7 @@
 
 /* ============ 設定 ============ */
 const CONFIG = {
-  VERSION: '0.2.2',
+  VERSION: '0.3.0',
   // Google Cloud（プロジェクト data-chokko-camera）の OAuth クライアントID。秘密の値ではない
   CLIENT_ID: '73917303414-3d4rbe7ifl904r77kv79lq1csa7smura.apps.googleusercontent.com',
   SCOPE: 'https://www.googleapis.com/auth/drive.file',
@@ -177,8 +257,11 @@ const CONFIG = {
   DEFAULT_DEST: '未整理',
   MAX_BYTES: 4.8 * 1024 * 1024,   // Drive の multipart アップロードの上限 5MB に収める
   QUALITIES: [0.92, 0.86, 0.8, 0.72],
+  BLUR_LIMIT: 150,                // ぼやけの数字がこれ未満なら「ピンぼけかも」（Xperia の写真で決めた）
+  MAX_BATCH: 20,                  // 連続モードで一度に持てる枚数
+  DONE_HIDE_MS: 4000,             // 「送れました」の行を消すまで
 };
-const KEY = { token: 'dcc.token', dest: 'dcc.dest', folders: 'dcc.folders', email: 'dcc.email', custom: 'dcc.custom' };
+const KEY = { token: 'dcc.token', dest: 'dcc.dest', folders: 'dcc.folders', email: 'dcc.email', custom: 'dcc.custom', mode: 'dcc.mode' };
 const FOLDER_MIME = 'application/vnd.google-apps.folder';
 
 /* ============ 小道具 ============ */
@@ -192,12 +275,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 function withTimeout(p, ms) {
   return Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), ms))]);
 }
-// 日本時間で YYYY-MM-DD_HHMMSS.jpg
+// 日本時間で YYYY-MM-DD_HHMMSS.jpg。同じ秒に2枚あれば _2 を付ける
+const usedNames = new Set();
 function fileNameFor(date) {
   const j = new Date(date.getTime() + 9 * 3600 * 1000);
   const p = (n) => String(n).padStart(2, '0');
-  return `${j.getUTCFullYear()}-${p(j.getUTCMonth() + 1)}-${p(j.getUTCDate())}_` +
-         `${p(j.getUTCHours())}${p(j.getUTCMinutes())}${p(j.getUTCSeconds())}.jpg`;
+  const base = `${j.getUTCFullYear()}-${p(j.getUTCMonth() + 1)}-${p(j.getUTCDate())}_` +
+               `${p(j.getUTCHours())}${p(j.getUTCMinutes())}${p(j.getUTCSeconds())}`;
+  let name = base + '.jpg';
+  for (let i = 2; usedNames.has(name); i++) name = `${base}_${i}.jpg`;
+  usedNames.add(name);
+  return name;
 }
 class AuthError extends Error {}
 class ApiError extends Error { constructor(status, msg) { super(msg); this.status = status; } }
@@ -224,6 +312,7 @@ function renderDests() {
   box.appendChild(add);
   const sel = box.querySelector('[aria-pressed="true"]');
   if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
+  if ($('batchDest')) $('batchDest').textContent = dest;
 }
 
 /* ============ 新しいフォルダ ============ */
@@ -251,6 +340,20 @@ function createFolderClicked() {
     .then(() => { selectDest(name); closeNewFolder(); })
     .catch((e) => { $('nfErr').textContent = 'フォルダを作れませんでした（' + (e && e.message || e) + '）'; })
     .finally(() => { $('nfOk').disabled = false; });
+}
+
+/* ============ 送り先のフォルダをドライブで開く ============ */
+const folderUrl = (id) => 'https://drive.google.com/drive/folders/' + encodeURIComponent(id);
+function openFolderClicked() {
+  const f = store.get(KEY.folders);
+  const id = f && f.sub && f.sub[dest];
+  if (id) { window.open(folderUrl(id), '_blank'); return; }
+  // まだフォルダの ID を知らない（ログイン前など）: 先に窓を開けておき、ID が分かったら行き先を入れる
+  const w = window.open('', '_blank');
+  getTokenInGesture()
+    .then(() => addFolder(dest))
+    .then((fid) => { if (w) w.location.href = folderUrl(fid); else window.open(folderUrl(fid), '_blank'); })
+    .catch((e) => { if (w) w.close(); showNote('フォルダを開けませんでした: ' + (e && e.message || e)); });
 }
 
 /* ============ ログイン（Google Identity Services のトークン方式） ============ */
@@ -415,15 +518,21 @@ async function uploadJpeg(blob, name, folderId) {
 }
 
 /* ============ 送信の列 ============ */
-const queue = [];   // { id, blob, name, dest, state: 'sending'|'done'|'failed', msg }
+const queue = [];   // { id, blob, blobP, name, dest, state: 'sending'|'done'|'failed'|'note', msg }
 let seq = 0;
 function renderQueue() {
   const ul = $('queue');
   ul.innerHTML = '';
-  // 失敗は全部、それ以外は新しい順に3件まで
-  const shown = queue.filter((it) => it.state === 'failed')
-    .concat(queue.filter((it) => it.state !== 'failed').slice(0, 3)).slice(0, 5);
-  for (const it of shown) {
+  // 失敗は全部。送信中はまとめて1行。送れた行は数秒だけ（新しい1件）
+  const failed = queue.filter((it) => it.state === 'failed');
+  const sending = queue.filter((it) => it.state === 'sending');
+  const notes = queue.filter((it) => it.state === 'note');
+  const done = queue.filter((it) => it.state === 'done').slice(0, 1);
+  const rows = [...failed, ...notes];
+  if (sending.length === 1) rows.push(sending[0]);
+  else if (sending.length > 1) rows.push({ state: 'sending', dest: sending[0].dest, name: `${sending.length}枚を送っています` });
+  rows.push(...done);
+  for (const it of rows.slice(0, 5)) {
     const li = document.createElement('li');
     li.className = it.state;
     const st = document.createElement('span'); st.className = 'st';
@@ -466,6 +575,8 @@ async function sendItem(it) {
     }
     it.state = 'done'; it.blob = null; it.blobP = null;
     renderQueue();
+    // 送れた行は数秒で消す（撮り直したあとに前の「送れました」が残って紛らわしいため）
+    setTimeout(() => { const i = queue.indexOf(it); if (i >= 0 && it.state === 'done') { queue.splice(i, 1); renderQueue(); } }, CONFIG.DONE_HIDE_MS);
   } catch (e) { fail(it, e); }
 }
 function fail(it, e) {
@@ -475,7 +586,8 @@ function fail(it, e) {
   renderQueue();
 }
 window.addEventListener('beforeunload', (ev) => {
-  if (queue.some((it) => (it.blob || it.blobP) && it.state !== 'done')) { ev.preventDefault(); ev.returnValue = ''; }
+  const unsent = queue.some((it) => (it.blob || it.blobP) && it.state !== 'done');
+  if (unsent || batch.length) { ev.preventDefault(); ev.returnValue = ''; }
 });
 
 /* ============ カメラ ============ */
@@ -484,7 +596,7 @@ function camMessage(html) { const m = $('camMsg'); if (html) { m.innerHTML = htm
 function stopCamera() {
   if (stream) stream.getTracks().forEach((t) => t.stop());
   stream = track = imageCapture = null; photoSettings = null;
-  $('shutter').disabled = true;
+  updateShutter();
 }
 async function startCamera() {
   stopCamera();
@@ -508,11 +620,7 @@ async function startCamera() {
   v.srcObject = stream;
   try { await v.play(); } catch {}
   track = stream.getVideoTracks()[0];
-  // ピントは合わせ続ける（使える機種だけ）
-  try {
-    const caps = track.getCapabilities ? track.getCapabilities() : {};
-    if (caps.focusMode && caps.focusMode.includes('continuous')) await track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] });
-  } catch {}
+  setFocus('continuous');   // ピントは合わせ続ける（使える機種だけ）
   if ('ImageCapture' in window) {
     try {
       imageCapture = new ImageCapture(track);
@@ -521,9 +629,33 @@ async function startCamera() {
     } catch { photoSettings = null; }
   }
   camMessage('');
-  $('shutter').disabled = false;
+  updateShutter();
 }
 
+/* ============ ピント ============ */
+function setFocus(mode, point) {
+  if (!track || !track.getCapabilities) return Promise.resolve(false);
+  const caps = track.getCapabilities();
+  if (!caps.focusMode || !caps.focusMode.includes(mode)) return Promise.resolve(false);
+  const c = { focusMode: mode };
+  if (point && caps.pointsOfInterest) c.pointsOfInterest = [point];   // 押した場所に合わせる（対応する機種だけ）
+  return track.applyConstraints({ advanced: [c] }).then(() => true).catch(() => false);
+}
+let focusTimer = null;
+// 映像を押したら、丸い印を出してピントを合わせ直す（1回合わせてから、また合わせ続ける）
+function onFinderTap(ev) {
+  if (!track || !$('camMsg').hidden || !$('loginCard').hidden) return;
+  const r = $('finder').getBoundingClientRect();
+  const x = ev.clientX - r.left, y = ev.clientY - r.top;
+  const ring = $('focusRing');
+  ring.style.left = x + 'px'; ring.style.top = y + 'px';
+  ring.classList.remove('on'); void ring.offsetWidth; ring.classList.add('on');
+  clearTimeout(focusTimer);
+  setFocus('single-shot', { x: x / r.width, y: y / r.height })
+    .then((ok) => { focusTimer = setTimeout(() => setFocus('continuous'), ok ? 1500 : 0); });
+}
+
+/* ============ 写真の処理 ============ */
 function canvasToBlob(canvas, quality) {
   return new Promise((res, rej) => canvas.toBlob((b) => (b ? res(b) : rej(new Error('JPEG にできませんでした'))), 'image/jpeg', quality));
 }
@@ -568,6 +700,31 @@ async function jpegInfo(blob) {
   const swap = orientation >= 5 && orientation <= 8;   // 90度回して表示する印
   return { width: swap ? h : w, height: swap ? w : h };
 }
+// ぼやけの数字: 幅 480 に縮めた白黒の絵で、ラプラシアン（輪郭の強さ）のばらつきを 8×6 の区画ごとに測り、上位1割の平均
+async function blurScore(blob) {
+  const bmp = await createImageBitmap(blob, { resizeWidth: 480, resizeQuality: 'medium' });
+  const c = document.createElement('canvas'); c.width = bmp.width; c.height = bmp.height;
+  const g = c.getContext('2d', { willReadFrequently: true });
+  g.drawImage(bmp, 0, 0); bmp.close && bmp.close();
+  const { data, width: W, height: H } = g.getImageData(0, 0, c.width, c.height);
+  const gray = new Float32Array(W * H);
+  for (let i = 0, j = 0; i < W * H; i++, j += 4) gray[i] = 0.299 * data[j] + 0.587 * data[j + 1] + 0.114 * data[j + 2];
+  const LW = W - 2, LH = H - 2, th = Math.floor(LH / 8), tw = Math.floor(LW / 6), vals = [];
+  for (let ti = 0; ti < 8; ti++) for (let tj = 0; tj < 6; tj++) {
+    let s = 0, s2 = 0, n = 0;
+    for (let y = ti * th; y < (ti + 1) * th; y++) {
+      for (let x = tj * tw; x < (tj + 1) * tw; x++) {
+        const k = (y + 1) * W + (x + 1);
+        const l = gray[k - 1] + gray[k + 1] + gray[k - W] + gray[k + W] - 4 * gray[k];
+        s += l; s2 += l * l; n++;
+      }
+    }
+    vals.push(s2 / n - (s / n) * (s / n));
+  }
+  vals.sort((a, b) => b - a);
+  const top = vals.slice(0, Math.max(1, Math.floor(vals.length / 10)));
+  return top.reduce((a, b) => a + b, 0) / top.length;
+}
 async function capture() {
   const v = $('video');
   const portrait = v.videoHeight > v.videoWidth;
@@ -591,20 +748,57 @@ async function capture() {
   if (!v.videoWidth) throw new Error('カメラの映像がまだ来ていません');
   return encodeJpeg(v, v.videoWidth, v.videoHeight, false);
 }
+// 押した瞬間の映像の1コマを canvas に写す（maxW を付けると縮める）
+function grabFrame(canvas, maxW) {
+  const v = $('video');
+  if (!v.videoWidth) return false;
+  const s = maxW ? Math.min(1, maxW / v.videoWidth) : 1;
+  canvas.width = Math.round(v.videoWidth * s); canvas.height = Math.round(v.videoHeight * s);
+  canvas.getContext('2d').drawImage(v, 0, 0, canvas.width, canvas.height);
+  return true;
+}
 
-/* ============ 撮る → 確認 → 送る ============ */
-let current = null;    // { name, blobP（撮影中の約束）, blob, url }
-let capturing = false; // きれいな写真を撮っている最中（約1秒）
-// 押した瞬間の画面の絵をすぐ確認画面に出し、きれいな写真（機種の最大の大きさ）は裏で撮る
+/* ============ 撮る（1枚ずつ／連続） ============ */
+let mode = store.get(KEY.mode) === 'burst' ? 'burst' : 'single';
+let capturing = false;  // きれいな写真を撮っている最中（約1秒）。そのあいだシャッターは押せない
+function updateShutter() {
+  $('shutter').disabled = !track || capturing || (mode === 'burst' && batch.length >= CONFIG.MAX_BATCH);
+}
+function renderMode() {
+  const b = $('modeBtn');
+  b.classList.toggle('burst', mode === 'burst');
+  b.innerHTML = mode === 'burst' ? '<b>連続</b>1枚ずつにする' : '<b>1枚ずつ</b>連続にする';
+  updateShutter();
+}
+function toggleMode() { mode = mode === 'burst' ? 'single' : 'burst'; store.set(KEY.mode, mode); renderMode(); }
+function flash() { $('flash').classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => $('flash').classList.remove('on'))); }
+// 撮影を始めて「約束」を返す。できあがったらぼやけも測る
+function startCapture() {
+  capturing = true; updateShutter();
+  const p = capture();
+  p.finally(() => { capturing = false; updateShutter(); }).catch(() => {});
+  return p;
+}
 function onShutter() {
   if (!track || capturing) return;
+  if (mode === 'burst') return shootBurst();
+  shootSingle();
+}
+
+/* --- 1枚ずつ: 確認画面 --- */
+let current = null;    // { name, blobP, blob, url }
+function placeReviewPic() {
+  // 確認画面の写真を、カメラの映像とまったく同じ位置に出す（押したときに絵がずれないように）
+  const r = $('finder').getBoundingClientRect();
+  const pic = document.querySelector('#review .pic');
+  pic.style.top = r.top + 'px'; pic.style.height = r.height + 'px';
+}
+function shootSingle() {
   const at = new Date();
-  const v = $('video'), c = $('quick');
-  if (v.videoWidth) { c.width = v.videoWidth; c.height = v.videoHeight; c.getContext('2d').drawImage(v, 0, 0); }
-  $('flash').classList.add('on'); requestAnimationFrame(() => requestAnimationFrame(() => $('flash').classList.remove('on')));
-  capturing = true; $('shutter').disabled = true;
+  grabFrame($('quick'));
+  flash();
   const cur = { name: fileNameFor(at), blob: null, url: null };
-  cur.blobP = capture().then((blob) => {
+  cur.blobP = startCapture().then((blob) => {
     cur.blob = blob;
     if (current === cur) {   // まだ確認画面なら、きれいな写真に差し替える
       cur.url = URL.createObjectURL(blob);
@@ -612,13 +806,16 @@ function onShutter() {
       img.onload = () => { if (current === cur) img.hidden = false; };
       img.src = cur.url;
       if (track) track.enabled = false;   // 確認画面のあいだは裏の映像を止める
+      blurScore(blob).then((s) => { if (current === cur) $('reviewBlur').hidden = s >= CONFIG.BLUR_LIMIT; }).catch(() => {});
     }
     return blob;
-  }).finally(() => { capturing = false; $('shutter').disabled = !track; });
+  });
   cur.blobP.catch((e) => { if (current === cur) closeReview(); showNote('撮影に失敗: ' + e.message); });
   current = cur;
   $('shot').hidden = true; $('shot').removeAttribute('src');
+  $('reviewBlur').hidden = true;
   $('reviewDest').textContent = dest;
+  placeReviewPic();
   $('review').hidden = false;
 }
 function closeReview() {
@@ -639,16 +836,110 @@ function onSend() {
   startSend(it);          // 写真ができしだい、裏で送る
 }
 
+/* --- 連続: 撮った写真をためて、最後にまとめて確認して送る --- */
+const batch = [];       // { id, name, blobP, blob, thumb（小さい絵の URL）, url, blur }
+function shootBurst() {
+  if (batch.length >= CONFIG.MAX_BATCH) { showNote(CONFIG.MAX_BATCH + '枚までです。［確認する］から送ってください'); return; }
+  const at = new Date();
+  const c = document.createElement('canvas');
+  const b = { id: ++seq, name: fileNameFor(at), blob: null, url: null, thumb: null, blur: null };
+  if (grabFrame(c, 240)) b.thumb = c.toDataURL('image/jpeg', 0.7);
+  flash();
+  b.blobP = startCapture().then((blob) => {
+    b.blob = blob;
+    blurScore(blob).then((s) => { b.blur = s < CONFIG.BLUR_LIMIT; renderBatch(); }).catch(() => {});
+    return blob;
+  });
+  b.blobP.catch((e) => { removeFromBatch(b); showNote('撮影に失敗: ' + e.message); });
+  batch.push(b);
+  renderBatch();
+}
+function removeFromBatch(b) {
+  const i = batch.indexOf(b);
+  if (i >= 0) batch.splice(i, 1);
+  if (b.url) URL.revokeObjectURL(b.url);
+  renderBatch();
+}
+function renderBatch() {
+  // 下の小さい列
+  const strip = $('strip');
+  strip.innerHTML = '';
+  for (const b of batch) {
+    const d = document.createElement('div'); d.className = 'th' + (b.blur ? ' blur' : '');
+    if (b.thumb) { const im = document.createElement('img'); im.src = b.thumb; im.alt = ''; d.appendChild(im); }
+    strip.appendChild(d);
+  }
+  strip.hidden = batch.length === 0;
+  strip.scrollLeft = strip.scrollWidth;
+  $('batchBtn').hidden = batch.length === 0;
+  $('batchCount').textContent = batch.length + '枚';
+  updateShutter();
+  // まとめて確認の画面
+  if ($('batch').hidden) return;
+  $('batchTitle').textContent = `撮った写真 ${batch.length}枚`;
+  $('batchDest').textContent = dest;
+  $('batchSend').textContent = `まとめて送る（${batch.length}枚）`;
+  $('batchSend').disabled = batch.length === 0;
+  const grid = $('grid');
+  grid.innerHTML = '';
+  batch.forEach((b, i) => {
+    const cell = document.createElement('div'); cell.className = 'cell' + (b.blur ? ' blur' : '');
+    const im = document.createElement('img'); im.alt = `${i + 1}枚目`;
+    if (b.blob && !b.url) b.url = URL.createObjectURL(b.blob);
+    im.src = b.url || b.thumb || '';
+    cell.appendChild(im);
+    const no = document.createElement('span'); no.className = 'no'; no.textContent = String(i + 1); cell.appendChild(no);
+    if (b.blur) { const w = document.createElement('span'); w.className = 'bw'; w.textContent = 'ピンぼけかも'; cell.appendChild(w); }
+    const del = document.createElement('button'); del.type = 'button'; del.className = 'del'; del.textContent = '✕'; del.setAttribute('aria-label', `${i + 1}枚目を消す`);
+    del.onclick = (ev) => { ev.stopPropagation(); removeFromBatch(b); };
+    cell.appendChild(del);
+    cell.onclick = () => openViewer(b);
+    grid.appendChild(cell);
+  });
+}
+function openBatch() { $('batch').hidden = false; renderBatch(); }
+function closeBatch() { $('batch').hidden = true; }
+let viewing = null;
+function openViewer(b) {
+  viewing = b;
+  if (b.blob && !b.url) b.url = URL.createObjectURL(b.blob);
+  $('viewImg').src = b.url || b.thumb || '';
+  $('viewBlur').hidden = !b.blur;
+  $('viewer').hidden = false;
+}
+function closeViewer() { $('viewer').hidden = true; $('viewImg').removeAttribute('src'); viewing = null; }
+function sendBatch() {
+  if (!batch.length) return;
+  const items = batch.splice(0, batch.length);
+  for (const b of items) {
+    if (b.url) URL.revokeObjectURL(b.url);
+    const it = { id: ++seq, blob: b.blob, blobP: b.blobP, name: b.name, dest, state: 'sending', msg: '' };
+    queue.unshift(it);
+    startSend(it);   // 押した操作の中で呼ぶ（ログインが切れていたら、ここで1回だけログインの窓を開く）
+  }
+  closeBatch();
+  renderBatch();
+}
+
 /* ============ 起動 ============ */
 function boot() {
   $('ver').textContent = 'v' + CONFIG.VERSION;
   renderDests();
   renderAccount();
+  renderMode();
   $('account').onclick = loginClicked;
   $('loginBtn').onclick = loginClicked;
+  $('openFolder').onclick = openFolderClicked;
   $('shutter').onclick = onShutter;
+  $('modeBtn').onclick = toggleMode;
+  $('batchBtn').onclick = openBatch;
+  $('batchBack').onclick = closeBatch;
+  $('batchSend').onclick = sendBatch;
+  $('viewClose').onclick = closeViewer;
+  $('viewDel').onclick = () => { if (viewing) removeFromBatch(viewing); closeViewer(); };
   $('retake').onclick = onRetake;
   $('send').onclick = onSend;
+  $('finder').addEventListener('click', onFinderTap);
   $('nfOk').onclick = createFolderClicked;
   $('nfCancel').onclick = closeNewFolder;
   $('nfName').addEventListener('input', () => { $('nfErr').textContent = ''; });
