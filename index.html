@@ -156,7 +156,26 @@
   #batchBack { background: var(--panel); border: 1px solid var(--line); }
   #batchSend { background: var(--accent); }
   #batchSend:disabled { opacity: .4; }
-  #viewer { position: fixed; inset: 0; z-index: 14; background: #000; }
+  .toBtn { background: none; border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
+    color: var(--muted); font-size: 14px; }
+  .toBtn b { color: var(--text); }
+  .toBtn::after { content: ' ▾'; color: var(--muted); }
+  #destSheet { position: fixed; inset: 0; z-index: 25; background: rgba(0,0,0,.6); display: flex; align-items: flex-end; }
+  #destSheet[hidden] { display: none; }
+  #destSheet .card { width: 100%; background: var(--panel); border-radius: 16px 16px 0 0;
+    padding: 16px 12px calc(16px + env(safe-area-inset-bottom)); }
+  #destSheet p { margin: 0 4px; }
+  #destList { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; max-height: 50vh; overflow-y: auto; margin: 12px 0; }
+  #destClose { width: 100%; border: 1px solid var(--line); background: var(--bg); border-radius: 12px; padding: 14px 0; font-size: 16px; font-weight: 700; }
+  #viewer { position: fixed; inset: 0; z-index: 14; background: #000; touch-action: pan-y; }
+  #viewer .count { position: absolute; top: calc(12px + env(safe-area-inset-top)); left: 50%; transform: translateX(-50%);
+    background: rgba(0,0,0,.6); padding: 4px 14px; border-radius: 999px; font-size: 15px; font-weight: 700; z-index: 1; }
+  #viewer .blurWarn { top: calc(52px + env(safe-area-inset-top)); }
+  #viewer .nav { position: absolute; top: 50%; transform: translateY(-50%); width: 48px; height: 72px; border: 0;
+    background: rgba(0,0,0,.45); font-size: 32px; border-radius: 10px; z-index: 1; }
+  #viewer .nav:disabled { opacity: 0; }
+  #viewPrev { left: 6px; }
+  #viewNext { right: 6px; }
   #viewer[hidden] { display: none; }
   #viewer img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
   #viewer .bar { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
@@ -206,7 +225,7 @@
 <div id="review" hidden>
   <div class="pic"><canvas id="quick"></canvas><img id="shot" alt="撮った写真" hidden><div class="blurWarn" id="reviewBlur" hidden>ピンぼけかも。撮り直しをおすすめします</div></div>
   <div class="bar">
-    <div class="to">送り先: <b id="reviewDest"></b></div>
+    <div class="to"><button class="toBtn" id="reviewTo" type="button">送り先: <b id="reviewDest"></b></button></div>
     <button id="retake" type="button">撮り直し</button>
     <button id="send" type="button">送る</button>
   </div>
@@ -216,17 +235,28 @@
   <div class="head"><b id="batchTitle"></b><span class="sub">写真を押すと大きく見られます。要らない写真は ✕ で消せます。</span></div>
   <div id="grid"></div>
   <div class="bar">
-    <div class="to">送り先: <b id="batchDest"></b></div>
+    <div class="to"><button class="toBtn" id="batchTo" type="button">送り先: <b id="batchDest"></b></button></div>
     <button id="batchBack" type="button">続けて撮る</button>
     <button id="batchSend" type="button">まとめて送る</button>
   </div>
 </div>
 <div id="viewer" hidden>
-  <img id="viewImg" alt="撮った写真">
+  <img id="viewImg" alt="撮った写真" draggable="false">
+  <div class="count" id="viewCount"></div>
   <div class="blurWarn" id="viewBlur" hidden>ピンぼけかも</div>
+  <button class="nav" id="viewPrev" type="button" aria-label="前の写真">‹</button>
+  <button class="nav" id="viewNext" type="button" aria-label="次の写真">›</button>
   <div class="bar">
     <button id="viewDel" type="button">この写真を消す</button>
     <button id="viewClose" type="button">閉じる</button>
+  </div>
+</div>
+
+<div id="destSheet" hidden>
+  <div class="card">
+    <p><b>送り先を選ぶ</b></p>
+    <div id="destList"></div>
+    <button id="destClose" type="button">閉じる</button>
   </div>
 </div>
 
@@ -248,7 +278,7 @@
 
 /* ============ 設定 ============ */
 const CONFIG = {
-  VERSION: '0.3.1',
+  VERSION: '0.4.0',
   // Google Cloud（プロジェクト data-chokko-camera）の OAuth クライアントID。秘密の値ではない
   CLIENT_ID: '73917303414-3d4rbe7ifl904r77kv79lq1csa7smura.apps.googleusercontent.com',
   SCOPE: 'https://www.googleapis.com/auth/drive.file',
@@ -313,6 +343,27 @@ function renderDests() {
   const sel = box.querySelector('[aria-pressed="true"]');
   if (sel && sel.scrollIntoView) sel.scrollIntoView({ block: 'nearest' });
   if ($('batchDest')) $('batchDest').textContent = dest;
+  if ($('reviewDest')) $('reviewDest').textContent = dest;
+  if ($('destSheet') && !$('destSheet').hidden) renderDestList();
+}
+
+/* ============ 送る直前に送り先を選び直す ============ */
+function openDestSheet() { renderDestList(); $('destSheet').hidden = false; }
+function closeDestSheet() { $('destSheet').hidden = true; }
+function renderDestList() {
+  const box = $('destList');
+  box.innerHTML = '';
+  for (const d of allDests()) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'dest'; b.textContent = d; b.title = d;
+    b.setAttribute('aria-pressed', String(d === dest));
+    b.onclick = () => { selectDest(d); closeDestSheet(); };
+    box.appendChild(b);
+  }
+  const add = document.createElement('button');
+  add.type = 'button'; add.className = 'dest add'; add.textContent = '＋ 追加';
+  add.onclick = () => { closeDestSheet(); openNewFolder(); };
+  box.appendChild(add);
 }
 
 /* ============ 新しいフォルダ ============ */
@@ -919,15 +970,41 @@ function renderBatch() {
 }
 function openBatch() { $('batch').hidden = false; renderBatch(); }
 function closeBatch() { $('batch').hidden = true; }
-let viewing = null;
-function openViewer(b) {
+// 大きく見る画面: 左右に払うか ‹ › で前後の写真へ
+let viewing = null, viewIdx = -1;
+function openViewer(b) { viewIdx = batch.indexOf(b); showViewer(); $('viewer').hidden = false; }
+function showViewer() {
+  const b = batch[viewIdx];
+  if (!b) { closeViewer(); return; }
   viewing = b;
   if (b.blob && !b.url) b.url = URL.createObjectURL(b.blob);
   $('viewImg').src = b.url || b.thumb || '';
   $('viewBlur').hidden = !b.blur;
-  $('viewer').hidden = false;
+  $('viewCount').textContent = `${viewIdx + 1} / ${batch.length}`;
+  $('viewPrev').disabled = viewIdx <= 0;
+  $('viewNext').disabled = viewIdx >= batch.length - 1;
 }
-function closeViewer() { $('viewer').hidden = true; $('viewImg').removeAttribute('src'); viewing = null; }
+function stepViewer(d) {
+  const n = viewIdx + d;
+  if (n < 0 || n >= batch.length) return;
+  viewIdx = n; showViewer();
+}
+function closeViewer() { $('viewer').hidden = true; $('viewImg').removeAttribute('src'); viewing = null; viewIdx = -1; }
+function deleteViewing() {
+  if (!viewing) return;
+  removeFromBatch(viewing);
+  if (!batch.length) { closeViewer(); return; }
+  if (viewIdx >= batch.length) viewIdx = batch.length - 1;   // 消したら次の写真（最後なら前の写真）を出す
+  showViewer();
+}
+let swipe = null;
+function onViewerDown(ev) { if (ev.target.closest('button')) return; swipe = { x: ev.clientX, y: ev.clientY }; }
+function onViewerUp(ev) {
+  if (!swipe) return;
+  const dx = ev.clientX - swipe.x, dy = ev.clientY - swipe.y;
+  swipe = null;
+  if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy)) stepViewer(dx < 0 ? 1 : -1);   // 左へ払うと次の写真
+}
 function sendBatch() {
   if (!batch.length) return;
   const items = batch.splice(0, batch.length);
@@ -956,7 +1033,16 @@ function boot() {
   $('batchBack').onclick = closeBatch;
   $('batchSend').onclick = sendBatch;
   $('viewClose').onclick = closeViewer;
-  $('viewDel').onclick = () => { if (viewing) removeFromBatch(viewing); closeViewer(); };
+  $('viewDel').onclick = deleteViewing;
+  $('viewPrev').onclick = () => stepViewer(-1);
+  $('viewNext').onclick = () => stepViewer(1);
+  $('viewer').addEventListener('pointerdown', onViewerDown);
+  $('viewer').addEventListener('pointerup', onViewerUp);
+  $('viewer').addEventListener('pointercancel', () => { swipe = null; });
+  $('reviewTo').onclick = openDestSheet;
+  $('batchTo').onclick = openDestSheet;
+  $('destClose').onclick = closeDestSheet;
+  $('destSheet').addEventListener('click', (ev) => { if (ev.target === $('destSheet')) closeDestSheet(); });
   $('retake').onclick = onRetake;
   $('send').onclick = onSend;
   $('finder').addEventListener('click', onFinderTap);
