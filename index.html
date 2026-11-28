@@ -248,7 +248,7 @@
 
 /* ============ 設定 ============ */
 const CONFIG = {
-  VERSION: '0.3.0',
+  VERSION: '0.3.1',
   // Google Cloud（プロジェクト data-chokko-camera）の OAuth クライアントID。秘密の値ではない
   CLIENT_ID: '73917303414-3d4rbe7ifl904r77kv79lq1csa7smura.apps.googleusercontent.com',
   SCOPE: 'https://www.googleapis.com/auth/drive.file',
@@ -641,8 +641,30 @@ function setFocus(mode, point) {
   if (point && caps.pointsOfInterest) c.pointsOfInterest = [point];   // 押した場所に合わせる（対応する機種だけ）
   return track.applyConstraints({ advanced: [c] }).then(() => true).catch(() => false);
 }
-let focusTimer = null;
-// 映像を押したら、丸い印を出してピントを合わせ直す（1回合わせてから、また合わせ続ける）
+// ピントを合わせ直す: いったん「手で決めた距離」に止めてから「合わせ続ける」に戻すと、カメラが探し直す
+// （Xperia の Chrome は「1回だけ合わせる」を受けてもすぐ「合わせ続ける」に戻り、探し直したか分からなかった。
+//  止めて戻すやり方は、映像のくっきり度が 0.3 秒で戻ることを実機で確かめた）
+let refocusing = false;
+async function refocus(point) {
+  if (!track || refocusing) return;
+  refocusing = true;
+  try {
+    const caps = track.getCapabilities ? track.getCapabilities() : {};
+    const modes = caps.focusMode || [];
+    if (modes.includes('manual') && modes.includes('continuous')) {
+      const s = track.getSettings();
+      const d = typeof s.focusDistance === 'number' ? s.focusDistance : (caps.focusDistance && caps.focusDistance.min);
+      await track.applyConstraints({ advanced: [{ focusMode: 'manual', focusDistance: d }] }).catch(() => {});
+      await sleep(120);
+      await setFocus('continuous', point);
+    } else if (modes.includes('single-shot')) {
+      await setFocus('single-shot', point);
+      await sleep(1200);
+      await setFocus('continuous');
+    }
+  } finally { refocusing = false; }
+}
+// 映像を押したら、丸い印を出してピントを合わせ直す
 function onFinderTap(ev) {
   if (!track || !$('camMsg').hidden || !$('loginCard').hidden) return;
   const r = $('finder').getBoundingClientRect();
@@ -650,9 +672,7 @@ function onFinderTap(ev) {
   const ring = $('focusRing');
   ring.style.left = x + 'px'; ring.style.top = y + 'px';
   ring.classList.remove('on'); void ring.offsetWidth; ring.classList.add('on');
-  clearTimeout(focusTimer);
-  setFocus('single-shot', { x: x / r.width, y: y / r.height })
-    .then((ok) => { focusTimer = setTimeout(() => setFocus('continuous'), ok ? 1500 : 0); });
+  refocus({ x: x / r.width, y: y / r.height });
 }
 
 /* ============ 写真の処理 ============ */
